@@ -4,12 +4,14 @@ import android.content.Context;
 import android.support.annotation.NonNull;
 
 import org.thoughtcrime.securesms.R;
+import org.thoughtcrime.securesms.database.NoSuchMessageException;
 import org.thoughtcrime.securesms.dependencies.InjectableType;
 import org.thoughtcrime.securesms.jobmanager.JobParameters;
 import org.thoughtcrime.securesms.jobmanager.SafeData;
 import org.thoughtcrime.securesms.logging.Log;
+import org.thoughtcrime.securesms.util.TextSecurePreferences;
+import org.whispersystems.libsignal.util.guava.Optional;
 import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
-import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
 import org.whispersystems.signalservice.api.push.exceptions.PushNetworkException;
 
 import java.io.IOException;
@@ -51,14 +53,26 @@ public class PushNotificationReceiveJob extends PushReceivedJob implements Injec
 
   @Override
   public void onRun() throws IOException {
-    receiver.retrieveMessages(new SignalServiceMessageReceiver.MessageReceivedCallback() {
-      @Override
-      public void onMessage(SignalServiceEnvelope envelope) {
-        handle(envelope);
-      }
-    });
+    pullAndProcessMessages(context, receiver, TAG, System.currentTimeMillis());
   }
 
+  public static synchronized void pullAndProcessMessages(Context context, SignalServiceMessageReceiver receiver, String tag, long startTime) throws IOException {
+    receiver.retrieveMessages(envelope -> {
+      Log.i(tag, "Retrieved an envelope." + timeSuffix(startTime));
+      Optional<Long> messageId = PushReceivedJob.processEnvelope(context, envelope);
+      Log.i(tag, "Processed an envelope." + timeSuffix(startTime));
+
+      if (messageId.isPresent()) {
+        try {
+          PushDecryptJob.processMessage(context, messageId.get(), -1);
+          Log.i(tag, "Successfully processed a message." + timeSuffix(startTime));
+        } catch (NoSuchMessageException e) {
+          Log.i(tag, "No such message." + timeSuffix(startTime), e);
+        }
+      }
+    });
+    TextSecurePreferences.setNeedsMessagePull(context, false);
+  }
   @Override
   public boolean onShouldRetry(Exception e) {
     Log.w(TAG, e);
@@ -69,5 +83,9 @@ public class PushNotificationReceiveJob extends PushReceivedJob implements Injec
   public void onCanceled() {
     Log.w(TAG, "***** Failed to download pending message!");
 //    MessageNotifier.notifyMessagesPending(getContext());
+  }
+
+  private static String timeSuffix(long startTime) {
+    return " (" + (System.currentTimeMillis() - startTime) + " ms elapsed)";
   }
 }
