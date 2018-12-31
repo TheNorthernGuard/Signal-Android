@@ -1,4 +1,9 @@
-# Signal Android 
+# Signal-NG Android 
+
+
+This is a fork for eduction and internal use.
+
+Please see the original at https://github.com/signalapp/Signal-Android
 
 Signal is a messaging app for simple private communication with friends.
 
